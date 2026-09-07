@@ -118,7 +118,29 @@ This stage performs:
    - If `G == 1` and `(R || S || LSB)` then increment mantissa.
    - Handles carry-out from rounding:
      - If rounding overflows mantissa, set mantissa to 0x800000 and increment exponent.
+### Stage 6 Implementation Clarifications
 
+To avoid ambiguity in the bit-level implementation, follow this ordering exactly:
+
+1. Preserve the extracted `z_m`, `guard_bit`, `round_bit`, and `sticky` values as the starting significand and rounding state.
+2. If `z_e < -126`, right-shift the significand by `(-126 - z_e)` to align the result to exponent -126.
+   - Every nonzero bit shifted out of the significand must contribute to the sticky bit.
+   - The previous guard and round bits also become part of the sticky information when this right shift is performed.
+   - After this underflow alignment, set the working exponent to -126 and clear the working guard and round bits.
+   - If the required shift is greater than or equal to the significand width, the significand becomes zero; any nonzero discarded information must still be reflected in sticky.
+3. Otherwise, if the significand MSB is zero, perform one normalization left shift:
+   - shift the significand left by one bit,
+   - decrement the exponent by one,
+   - move the previous guard bit into the significand LSB,
+   - move the previous round bit into the guard position,
+   - clear the round bit,
+   - preserve sticky.
+4. Perform RNE only after the underflow alignment/normalization step is complete.
+5. RNE increments the significand exactly when `G && (R || S || LSB)` is true.
+6. If RNE causes a significand carry-out, shift the significand right by one bit and increment the exponent by one.
+7. Do not perform additional normalization shifts after the RNE decision.
+
+The normal-number input assumption does not mean that the multiplication result cannot underflow; therefore the underflow alignment and zero-result behavior above must still be implemented correctly.
 ### Stage 7 — Pack
 - For normal path:
   - Pack sign, biased exponent, fraction.
